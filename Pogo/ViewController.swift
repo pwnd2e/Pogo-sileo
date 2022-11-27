@@ -83,7 +83,7 @@ class ViewController: BaseViewController {
             return
         }
          
-        guard let deb = Bundle.main.path(forResource: "org.coolstar.sileo_2.3_iphoneos-arm", ofType: "deb") else {
+        guard let deb = Bundle.main.path(forResource: "org.coolstar.sileonightly_2.4+20221114.1668456007.4b8fd6c_iphoneos-arm", ofType: "deb") else {
             NSLog("[POGO] Could not find deb")
             return
         }
@@ -144,13 +144,23 @@ class ViewController: BaseViewController {
                                 }
                                 self.statusLabel?.text = "UICache Sileo"
                                 DispatchQueue.global(qos: .utility).async {
-                                    let ret = spawn(command: "/usr/bin/uicache", args: ["-p", "/Applications/Sileo.app"], root: true)
+                                    let ret = spawn(command: "/usr/bin/uicache", args: ["-p", "'/Applications/Sileo Nightly.app'"], root: true)
                                     DispatchQueue.main.async {
                                         if ret != 0 {
                                             self.statusLabel?.text = "failed to uicache \(ret)"
                                             return
                                         }
-                                        self.statusLabel?.text = "uicache succesful, have fun!"
+                                        self.statusLabel?.text = "Make symbolic link"
+                                        DispatchQueue.global(qos: .utility).async {
+                                            let ret = spawn(command: "/bin/ln", args: ["-sf", "/", "/var/jb"], root: true)
+                                            DispatchQueue.main.async {
+                                                if ret != 0 {
+                                                    self.statusLabel?.text = "failed to ln \(ret)"
+                                                    return
+                                                }
+                                                self.statusLabel?.text = "link succesful, have fun!"
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -207,11 +217,14 @@ class ViewController: BaseViewController {
         }))
         // for some reason after a reboot substitute will think its a "incomplete jailbreak"
         alert.addAction(UIAlertAction(title: "Activate Tweaks", style: .default, handler: { _ in
-            spawn(command: "/etc/rc.d/substitute-launcher", args: [], root: true)
+            guard let substitute = Bundle.main.path(forResource: "substitute", ofType: "deb") else {
+                NSLog("[POGO] Could not find substitute")
+                return
+            }
+            spawn(command: "/usr/bin/dpkg", args: ["-i", substitute], root: true)
             self.statusLabel?.text = "done, respring to activate tweaks"
         }))
         alert.addAction(UIAlertAction(title: "Do All", style: .default, handler: { _ in
-            self.statusLabel?.text = "doing all tools, this may take a second"
             self.runUiCache()
             spawn(command: "/sbin/mount", args: ["-uw", "/private/preboot"], root: true)
             spawn(command: "/sbin/mount", args: ["-uw", "/" ], root: true)
