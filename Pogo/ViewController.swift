@@ -34,6 +34,7 @@ class ViewController: BaseViewController {
         statusLabel = UILabel(frame: .zero)
         statusLabel!.translatesAutoresizingMaskIntoConstraints = false
         statusLabel?.textColor = .label
+        statusLabel?.numberOfLines = 0
 
         let version = UILabel(frame: .zero)
         version.translatesAutoresizingMaskIntoConstraints = false
@@ -121,44 +122,75 @@ class ViewController: BaseViewController {
                 }
                 self.statusLabel?.text = "Preparing Bootstrap"
                 DispatchQueue.global(qos: .utility).async {
-                    let ret = spawn(command: "/usr/bin/sh", args: ["/prep_bootstrap.sh"], root: true)
-                    DispatchQueue.main.async {
+                    let ret = spawn(command: "/usr/bin/sh", args: ["/preinst_bootstrap.sh"], root: true)
+                    if ret != 0 {
+                        self.statusLabel?.text = "Failed to prepare bootstrap \(ret)"
+                        return
+                    }
+                    DispatchQueue.global(qos: .utility).async {
+                        let ret = spawn(command: helper, args: ["-i", tar], root: true)
                         if ret != 0 {
-                            self.statusLabel?.text = "Failed to prepare bootstrap \(ret)"
-                            // if ret is -1, it probably means that amfi is not patched, show a alert
-                            if ret == -1 {
-                                let alert = UIAlertController(title: "Error", message: "Failed with -1, are you sure you have amfi patched?", preferredStyle: .alert)
-                                alert.addAction(UIAlertAction(title: "NO", style: .default, handler: nil))
-                                // show the alert
-                                self.present(alert, animated: true)
-                            }
+                            self.statusLabel?.text = "Error Installing Bootstrap \(ret)"
                             return
                         }
-                        self.statusLabel?.text = "Installing Packages"
                         DispatchQueue.global(qos: .utility).async {
-                            let ret = spawn(command: "/usr/bin/dpkg", args: ["-i", deb, libswift, safemode, preferenceloader, substitute], root: true)
-                            DispatchQueue.main.async {
-                                if ret != 0 {
-                                    self.statusLabel?.text = "Failed to install packages \(ret)"
-                                    return
-                                }
-                                self.statusLabel?.text = "UICache Sileo"
-                                DispatchQueue.global(qos: .utility).async {
-                                    let ret = spawn(command: "/usr/bin/uicache", args: ["-p", "'/Applications/Sileo Nightly.app'"], root: true)
-                                    DispatchQueue.main.async {
-                                        if ret != 0 {
-                                            self.statusLabel?.text = "failed to uicache \(ret)"
-                                            return
+                            let ret = spawn(command: "/usr/bin/dpkg", args: ["-i", deb], root: true)
+                            if ret != 0 {
+                                self.statusLabel?.text = "Failed to install packages \(ret)"
+                                return
+                            }
+                            DispatchQueue.global(qos: .utility).async {
+                                let ret = spawn(command: "/usr/bin/sh", args: ["/prep_bootstrap.sh"], root: true)
+                                DispatchQueue.main.async {
+                                    if ret != 0 {
+                                        self.statusLabel?.text = "Failed to prepare bootstrap \(ret)"
+                                        // if ret is -1, it probably means that amfi is not patched, show a alert
+                                        if ret == -1 {
+                                            let alert = UIAlertController(title: "Error", message: "Failed with -1, are you sure you have amfi patched?", preferredStyle: .alert)
+                                            alert.addAction(UIAlertAction(title: "NO", style: .default, handler: nil))
+                                            // show the alert
+                                            self.present(alert, animated: true)
                                         }
-                                        self.statusLabel?.text = "Make symbolic link"
-                                        DispatchQueue.global(qos: .utility).async {
-                                            let ret = spawn(command: "/bin/ln", args: ["-sf", "/", "/var/jb"], root: true)
-                                            DispatchQueue.main.async {
-                                                if ret != 0 {
-                                                    self.statusLabel?.text = "failed to ln \(ret)"
-                                                    return
+                                        return
+                                    }
+                                    self.statusLabel?.text = "Installing Packages"
+                                    DispatchQueue.global(qos: .utility).async {
+                                        let ret = spawn(command: "/usr/bin/dpkg", args: ["-i", libswift, safemode, preferenceloader, substitute], root: true)
+                                        DispatchQueue.main.async {
+                                            if ret != 0 {
+                                                self.statusLabel?.text = "Failed to install packages \(ret)"
+                                                return
+                                            }
+                                            self.statusLabel?.text = "UICache Sileo"
+                                            DispatchQueue.global(qos: .utility).async {
+                                                let ret = spawn(command: "/usr/bin/uicache", args: ["-p", "/Applications/Sileo-Nightly.app"], root: true)
+                                                DispatchQueue.main.async {
+                                                    if ret != 0 {
+                                                        self.statusLabel?.text = "failed to uicache \(ret)"
+                                                        return
+                                                    }
+                                                    self.statusLabel?.text = "Remove old symbolic link"
+                                                    DispatchQueue.global(qos: .utility).async {
+                                                        let ret = spawn(command: "/bin/rm", args: ["-rf", "/var/jb"], root: true)
+                                                        DispatchQueue.main.async {
+                                                            if ret != 0 {
+                                                                self.statusLabel?.text = "failed to remove old link \(ret)"
+                                                                return
+                                                            }
+                                                            self.statusLabel?.text = "Make symbolic link"
+                                                            DispatchQueue.global(qos: .utility).async {
+                                                                let ret = spawn(command: "/bin/ln", args: ["-sf", "/", "/var/jb"], root: true)
+                                                                DispatchQueue.main.async {
+                                                                    if ret != 0 {
+                                                                        self.statusLabel?.text = "failed to link \(ret)"
+                                                                        return
+                                                                    }
+                                                                    self.statusLabel?.text = "link succesful, have fun!"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                                self.statusLabel?.text = "link succesful, have fun!"
                                             }
                                         }
                                     }
@@ -221,10 +253,17 @@ class ViewController: BaseViewController {
                 NSLog("[POGO] Could not find substitute")
                 return
             }
-            spawn(command: "/usr/bin/dpkg", args: ["-i", substitute], root: true)
+            spawn(command: "/usr/bin/ldid", args: ["-s", "/usr/bin/apt"], root: true)
+            spawn(command: "/usr/bin/dpkg", args: ["--force-all", "-i", substitute], root: true)
+            let ret = spawn(command: "/usr/libexec/firmware", args: [""], root: true)
+            if ret != 0 {
+                self.statusLabel?.text = "Failed to kickstart jailbreak \(ret)"
+                return
+            }
             self.statusLabel?.text = "done, respring to activate tweaks"
         }))
-        alert.addAction(UIAlertAction(title: "Do All", style: .default, handler: { _ in
+        alert.addAction(UIAlertAction(title: "Kickstart", style: .default, handler: { _ in
+            self.statusLabel?.text = "doing kickstart, this may take a second"
             self.runUiCache()
             spawn(command: "/sbin/mount", args: ["-uw", "/private/preboot"], root: true)
             spawn(command: "/sbin/mount", args: ["-uw", "/" ], root: true)
@@ -233,7 +272,13 @@ class ViewController: BaseViewController {
                 NSLog("[POGO] Could not find substitute")
                 return
             }
-            spawn(command: "/usr/bin/dpkg", args: ["-i", substitute], root: true)
+            spawn(command: "/usr/bin/ldid", args: ["-s", "/usr/bin/apt"], root: true)
+            spawn(command: "/usr/bin/dpkg", args: ["--force-all", "-i", substitute], root: true)
+            let ret = spawn(command: "/usr/libexec/firmware", args: [""], root: true)
+            if ret != 0 {
+                self.statusLabel?.text = "Failed to kickstart jailbreak \(ret)"
+                return
+            }
             spawn(command: "/usr/bin/sbreload", args: [], root: true)
         }))
         alert.addAction(UIAlertAction(title: "Cancel", style: .cancel, handler: nil))
